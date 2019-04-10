@@ -1,7 +1,7 @@
 
-#Log Analisyer Project
+# Log Analisyer Project
 
-##Functionality
+## Functionality
 
 
 The code should answer three questions:
