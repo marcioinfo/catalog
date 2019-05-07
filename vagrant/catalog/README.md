@@ -9,7 +9,7 @@ This application provides a list of items within a variety of categories as well
 
 You will need to install these following application in order to make this code work.
 - Unix-style terminal(Windows user please download and use Git Bash terminal)
-- VirtualBox
+- [VirtualBox](https://github.com/marcioinfo/fullstack-nanodegree-vm)
 - Vagrant
 - Postgresql instance
 
