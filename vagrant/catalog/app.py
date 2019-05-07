@@ -19,66 +19,71 @@ auth = HTTPBasicAuth()
 from flask_mail import Message, Mail
 
 
-SCOPES="profile openid email"
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-ACCESS_TOKEN_URI = 'https://www.googleapis.com/oauth2/v4/token'
-AUTHORIZATION_URL = 'https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent'
-AUTHORIZATION_SCOPE = 'openid email profile'
-
-AUTH_REDIRECT_URI = os.environ.get("FN_AUTH_REDIRECT_URI")
-BASE_URI = os.environ.get("FN_BASE_URI")
-CLIENT_ID = os.environ.get("FN_CLIENT_ID")
-CLIENT_SECRET = os.environ.get("FN_CLIENT_SECRET")
+SCOPES=["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email"]
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
-
 API_SERVICE_NAME = 'drive'
 API_VERSION = 'v2'
 
 app = Flask(__name__)
-
+app.config['MAIL_SERVER'] = 'smtp.googlemail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+# THE SENDER WAS CREATED JUST TO USE IN THIS APPS, YOU CAN STORE IT IN YOUR ENVIRONMENT
+# HERE IS JUST TO MAKE THING EASY
+app.config['MAIL_USERNAME'] = 'categoryapps@gmail.com'
+app.config['MAIL_PASSWORD'] = 'May-2019'
+mail = Mail(app)
 
 engine = create_engine('postgresql://vagrant:Nov-2018@localhost:5432/catalog')
-
 Base.metadata.bind = engine
-
 DBSession = sessionmaker(bind=engine)
 session = DBSession()
 
-CLIENT_ID = json.loads(
-    open('client_secrets.json', 'r').read())['web']['client_id']
-
+# STORE IT INTO YOU ENVIRONMENT AS VARIABLE
 CLIENT_SECRETS_FILE = 'client_secrets.json'
 with open(CLIENT_SECRETS_FILE, 'r') as f:
     json_data = json.load(f)
 
 APPLICATION_NAME = "Category Store"
 
-checkpass =[];
-@app.route("/singapp", methods=['GET', 'POST'])
-def singin():
-    if request.method == 'POST':
-        checkpass = request.form['password']
-        checkuser = request.form['email']
 
-        if checkpass is None or checkuser is None:
-            abort(401)  # missign argument
+# JSON APIs to view Catategories Information
+@app.route('/categories/JSON')
+def categoriesJSON():
+    DBSession = sessionmaker(bind=engine)
+    session = DBSession()
+    dados = session.query(Catalog).all()
+    return jsonify(CatalogItem=[i.serialize for i in dados])
 
-        if session.query(User).filter_by(email=checkuser).first() is not None:
-            abort(400)  # Existing User
+# JSON APIs to view Catategories items Information
+@app.route('/categories/<int:catalog_id>/items/JSON')
+def categoriesItemJSON(catalog_id):
+    DBSession = sessionmaker(bind=engine)
+    session = DBSession()
+    dado = session.query(Catalog).filter_by(id=catalog_id).one()
+    items = session.query(CatalogItem).filter_by(
+        catalog_id=catalog_id).all()
+    return jsonify(CatalogItem=[i.serialize for i in items])
 
-        newUser = User(name=request.form['name'], email=request.form['email'], password_hash=request.form['password'])
-        session.add(newUser)
-        session.commit()
-        user = session.query(User).filter_by(email=user_session['email']).one()
-        login_session['name'] = user.name
-        return render_template('newuser.html')
-    else:
-        return render_template('newuser.html')
 
+# JSON APIs to view all item from all categories Information
+@app.route('/categories/items/JSON')
+def allCategoriesItemJSON():
+    DBSession = sessionmaker(bind=engine)
+    session = DBSession()
+    items = session.query(CatalogItem).all()
+    return jsonify(CatalogItem=[i.serialize for i in items])
 
 
 @app.route('/fbconnect', methods=['POST'])
 def fbconnect():
+
+    '''
+        AUTH FACEBOOK CONNECTION
+        THIS FUNCTION allows your users to log in with Facebook account
+        :return:
+    '''
+
     if request.args.get('state') != login_session['state']:
         response = make_response(json.dumps('Invalid state parameter.'), 401)
         response.headers['Content-Type'] = 'application/json'
@@ -158,13 +163,24 @@ def fbdisconnect():
     url = 'https://graph.facebook.com/%s/permissions?access_token=%s' % (facebook_id,access_token)
     h = httplib2.Http()
     result = h.request(url, 'DELETE')[1]
+    del login_session['facebook_id']
+    del login_session['username']
+    del login_session['email']
+    del login_session['picture']
+    del login_session['user_id']
+    del login_session['provider']
+
     return "you have been logged out"
-
-
 
 
 @app.route('/login')
 def loginUser():
+    '''
+    function to render login template
+    this function create a random key to state and pass it to
+    login_session and to login.html template
+    :return:
+    '''
     state = ''.join(random.choice(string.ascii_uppercase + string.digits)
                     for x in range(32))
     login_session['state'] = state
@@ -174,6 +190,11 @@ def loginUser():
 @app.route('/authorize')
 def authorize():
   # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow steps.
+  '''
+  Auth google sing in
+  this function will provide the start fo connection with google authentication
+  :return: will return an authorization URL
+  '''
   flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
       CLIENT_SECRETS_FILE, scopes=SCOPES)
 
@@ -220,22 +241,25 @@ def oauth2callback():
   ans = oauth2_client.userinfo().get().execute()
   login_session['credentials'] = credentials_to_dict(credentials)
 
-  user_session['username'] = ans['name']
-  user_session['picture'] = ans['picture']
-  user_session['email'] = ans['email']
+  login_session['username'] = ans['name']
+  login_session['picture'] = ans['picture']
+  login_session['email'] = ans['email']
+
+
+
 
   # see if user exists, if it doesn't make a new one
   user_id = getUserID(ans["email"])
   if not user_id:
-      user_id = createUser(user_session)
-  user_session['user_id'] = user_id
-  user_session['provider'] = 'google'
+      user_id = createUser(login_session)
+  login_session['user_id'] = user_id
+  login_session['provider'] = 'google'
 
-  flash("you are now logged in as %s" % user_session['username'])
+  flash("you are now logged in as %s" % login_session['username'])
 
   return redirect(url_for('showCategories'))
 
-
+# utils function
 def createUser(login_session):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
@@ -260,13 +284,14 @@ def getUserID(email):
         return None
 
 def credentials_to_dict(credentials):
-  return {'token': credentials.token,
-          'refresh_token': credentials.refresh_token,
-          'token_uri': credentials.token_uri,
-          'client_id': credentials.client_id,
-          'client_secret': credentials.client_secret,
-          'scopes': credentials.scopes}
+    return {'token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_uri': credentials.token_uri,
+            'client_id': credentials.client_id,
+            'client_secret': credentials.client_secret,
+            'scopes': credentials.scopes}
 
+# google disconnect
 @app.route('/revoke')
 def revoke():
   if 'credentials' not in login_session:
@@ -283,36 +308,42 @@ def revoke():
   status_code = getattr(revoke, 'status_code')
 
   if status_code == 200:
-
-    return (status_code)
+      del login_session['username']
+      del login_session['email']
+      del login_session['picture']
+      del login_session['user_id']
+      del login_session['provider']
+      return (status_code)
   else:
     return('An error occurred')
 
-
+# verify password function
 @auth.verify_password
-def verify_password(email_or_token, *password):
-    user_id = User.verify_auth_token(email_or_token)
-    if user_id:
-        user = session.query(User).filter_by(id=user_id).one()
-    else:
-        user = session.query(User).filter_by(email=email_or_token).first()
+def verify_password(email, password):
+    user = session.query(User).filter_by(email=email).first()
     if not user or not user.verify_password(password):
         return False
     g.user = user
     return True
 
+#verify token function
+def verify_token(token):
+    user_id = User.verify_auth_token(token)
+    if user_id:
+        return user_id
 
+# reset password send email function
 def send_reset_email(user):
     token = user.generate_auth_token()
     msg = Message('Password Reset Request',
                   sender='noreply@demo.com',
                   recipients=[user.email])
-    msg.body = f'''To reset your password, visit the following link:
-{url_for('reset_token', token=token, _external=True)}
-If you did not make this request then simply ignore this email and no changes will be made.'''
-    Mail.send(msg)
+    msg.body = """  To reset your password, visit the following link:
+    %s
+    If you did not make this request then simply ignore this email and no changes will be made.""" % {url_for('reset_token', token=token, _external=True)}
+    mail.send(msg)
 
-
+# reset password request
 @app.route("/reset_password", methods=['GET', 'POST'])
 def reset_request():
     if request.method == 'POST':
@@ -322,32 +353,31 @@ def reset_request():
         user = session.query(User).filter_by(email=email).first()
         send_reset_email(user)
         flash('An email has been sent with instructions to reset your password.', 'info')
-        return redirect(url_for('login.html'))
+        return render_template('login.html')
     return render_template('login.html')
 
 
-
-
-@app.route('/reset_password/<int:token>', methods=['GET', 'POST'])
+# Reset toke function
+@app.route("/reset_password/<token>", methods=['GET', 'POST'])
 def reset_token(token):
     if request.method == 'POST':
         if 'username' in login_session:
             return redirect(url_for('showCategories'))
-        else:
-            user_id = verify_password(token)
-            if user_id is None:
-                flash('That is an invalid or expired token', 'warning')
-                return redirect(url_for('reset_request'))
-
-            if request.form['password']:
-                user = getUserInfo(user_id)
-                user.password_hash = User.hash_password(request.form['password'])
-                session.add(user)
-                session.commit()
-                return redirect(url_for('singin'))
+        if verify_token(token) is None:
+            flash('That is an invalid or expired token', 'warning')
+            return redirect(url_for('reset_request'))
+        user_id = verify_token(token)
+        if request.form['password']:
+            user = getUserInfo(user_id)
+            user.hash_password(request.form['password'])
+            session.add(user)
+            session.commit()
+            return render_template('login.html')
     else:
-        render_template('reset_password.html', token=token)
+        return render_template('reset_password.html', token=token)
 
+
+#App login to user loggin into the app using app authentication
 
 @app.route('/applogin', methods=['GET', 'POST'])
 def applogin():
@@ -363,6 +393,7 @@ def applogin():
         if verify_password(email, password):
             login_session['provider'] = "APP"
             login_session['username'] = data.name
+            login_session['user_id'] = data.id
             flash("you are now logged in as %s" % login_session['username'])
             return redirect(url_for('showCategories'))
         else:
@@ -371,7 +402,7 @@ def applogin():
     else:
         return render_template('login.html')
 
-
+# create new user function
 @app.route("/usersingin", methods=['GET', 'POST'])
 def newUser():
     if request.method == 'POST':
@@ -392,41 +423,31 @@ def newUser():
         return render_template('login.html')
 
 
-
-
 @app.route('/disconnect')
 def disconnect():
     if 'provider' in login_session:
         if login_session['provider'] == 'google':
             revoke()
-            del user_session['username']
-            del user_session['email']
-            del user_session['picture']
-            del user_session['user_id']
-            del user_session['provider']
+            flash("You have successfully been logged out.")
+            return redirect(url_for('showCategories'))
+
         if login_session['provider'] == 'facebook':
             fbdisconnect()
-            del login_session['facebook_id']
+            flash("You have successfully been logged out.")
+            return redirect(url_for('showCategories'))
         if login_session['provider'] == 'APP':
             del user_session['username']
             del user_session['provider']
+            flash("You have successfully been logged out.")
             return redirect(url_for('showCategories'))
-        del login_session['username']
-        del login_session['email']
-        del login_session['picture']
-        del login_session['user_id']
-        del login_session['provider']
-        flash("You have successfully been logged out.")
-        return redirect(url_for('showCategories'))
-
-
 
     else:
         flash("You were not logged in")
         return ("You were not logged in")
 
 
-
+# app functionality
+# show all categories
 @app.route("/")
 @app.route("/catalog/showcatalog")
 def showCategories():
@@ -435,17 +456,17 @@ def showCategories():
     categories = session.query(Catalog).order_by(asc(Catalog.name))
     return render_template('showCategories.html', categories=categories)
 
-
+# show items from one category
 @app.route("/catalog/showItemCategory/<int:catag_id>/")
 def showItemsCategory(catag_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     catagoryItems = session.query(CatalogItem).filter_by(catalog_id=catag_id).all()
     catalogitem = session.query(Catalog).filter_by(id=catag_id).one()
+    return render_template('showItemsCategory.html', catagoryItems=catagoryItems, catalogitem=catalogitem,
+                           login_session=login_session)
 
-    return render_template('showItemsCategory.html', catagoryItems=catagoryItems, catalogitem=catalogitem)
-
-
+# Add item to one category
 @app.route("/catalog/showItem/<int:item_id>/item")
 def showItem(item_id):
     DBSession = sessionmaker(bind=engine)
@@ -454,26 +475,33 @@ def showItem(item_id):
     return render_template('showItem.html', catagoryItems=catagoryItems)
 
 
-
-@app.route("/catalog/addBrands", methods=['GET', 'POST'])
-def addBrands():
+# Add one category
+@app.route("/catalog/addcategory", methods=['GET', 'POST'])
+def addCategory():
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
+    if 'username' not in login_session:
+        return redirect('/login')
     if request.method == 'POST':
-        addBrand=Catalog(name=request.form['name'])
+        addBrand=Catalog(name=request.form['name'], user_id=login_session['user_id'])
         session.add(addBrand)
         session.commit()
         return redirect(url_for('showCategories'))
     else:
-        return render_template('addBrands.html')
+        return render_template('addcategory.html')
 
+
+# delete a category
 @app.route("/catalog/deleteCategory/<int:catag_id>/", methods=['GET', 'POST'])
 def deleteCategory(catag_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
+    if 'username' not in login_session:
+        return redirect('/login')
     deleteCatag = session.query(Catalog).filter_by(id=catag_id).one()
+    if deleteCatag.user_id != login_session['user_id']:
+        return "<script>function myFunction() {alert('You are not authorized to edit this Category. Please create your own Category in order to edit.');}</script><body onload='myFunction()'>"
     if request.method == 'POST':
-        deleteitem = session.query(CatalogItem).filter_by(catalog_id=catag_id).delete()
         session.delete(deleteCatag)
         session.commit()
         return redirect(url_for('showCategories'))
@@ -481,12 +509,17 @@ def deleteCategory(catag_id):
         return render_template("deleteCategory.html", deleteCatag=deleteCatag)
 
 
+# edit one category
 @app.route("/catalog/editCategory/<int:catag_id>/", methods=['GET', 'POST'])
 def editCategory(catag_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
+    if 'username' not in login_session:
+        return redirect('/login')
     editCategory = session.query(
         Catalog).filter_by(id=catag_id).one()
+    if editCategory.user_id != login_session['user_id']:
+        return "<script>function myFunction() {alert('You are not authorized to edit this Category. Please create your own Category in order to edit.');}</script><body onload='myFunction()'>"
     if request.method == 'POST':
         editCategory.name = request.form['name']
         session.add(editCategory)
@@ -496,27 +529,33 @@ def editCategory(catag_id):
     else:
         return render_template('updateCategory.html', editCategory=editCategory)
 
-
+# add um item to a category
 @app.route("/catalog/addItem/<int:catag_id>/", methods=['GET', 'POST'])
 def addItem(catag_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
+    if 'username' not in login_session:
+        return redirect('/login')
     catalogitem = session.query(Catalog).filter_by(id=catag_id).one()
     if request.method == 'POST':
-        newItem = CatalogItem(name=request.form['name'], description=request.form['description'], price=request.form['price'], image_name=request.form['image_name'], catalog_id=catag_id)
+        newItem = CatalogItem(name=request.form['name'], description=request.form['description'], price=request.form['price'], image_name=request.form['image_name'], user_id=login_session['user_id'], catalog_id=catag_id)
         session.add(newItem)
         session.commit()
         return redirect(url_for('showItemsCategory', catag_id=catag_id))
     else:
         return render_template('addItem.html', catalogitem=catalogitem)
 
-
+# update one item
 @app.route("/catalog/update/<int:catag_id>/item/<int:item_id>", methods=['GET', 'POST'])
 def updateItem(catag_id, item_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
+    if 'username' not in login_session:
+        return redirect('/login')
     category = session.query(Catalog).filter_by(id=catag_id).one()
     updateitem = session.query(CatalogItem).filter_by(id=item_id).one()
+    if category.user_id != login_session['user_id']:
+        return "<script>function myFunction() {alert('You are not authorized to edit this Category. Please create your own Category in order to edit.');}</script><body onload='myFunction()'>"
     if request.method == 'POST':
         if request.form['name']:
             updateitem.name = request.form['name']
@@ -537,11 +576,16 @@ def updateItem(catag_id, item_id):
         return render_template('updateItem.html', updateitem=updateitem)
 
 
+# delete one item
 @app.route("/catalog/delete/<int:item_id>/", methods=['GET', 'POST'])
 def deleteItem(item_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
+    if 'username' not in login_session:
+        return redirect('/login')
     deleteitem = session.query(CatalogItem).filter_by(id=item_id).one()
+    if deleteitem.user_id != login_session['user_id']:
+        return "<script>function myFunction() {alert('You are not authorized to Delete this item. Please create your own item in order to edit.');}</script><body onload='myFunction()'>"
     if request.method == 'POST':
         session.delete(deleteitem)
         session.commit()
