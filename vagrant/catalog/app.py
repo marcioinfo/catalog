@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, jsonify, url_for, flash, abort, g
+from flask_mail import Message, Mail
 from sqlalchemy import create_engine, asc
 from sqlalchemy.orm import sessionmaker
 from catalogModel import Base, Catalog, CatalogItem, User
@@ -16,7 +17,6 @@ import googleapiclient.discovery
 import os
 from flask_httpauth import HTTPBasicAuth
 auth = HTTPBasicAuth()
-from flask_mail import Message, Mail
 
 
 SCOPES=["https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email"]
@@ -54,6 +54,7 @@ def categoriesJSON():
     session = DBSession()
     dados = session.query(Catalog).all()
     return jsonify(CatalogItem=[i.serialize for i in dados])
+
 
 # JSON APIs to view Catategories items Information
 @app.route('/categories/<int:catalog_id>/items/JSON')
@@ -101,7 +102,6 @@ def fbconnect():
     h = httplib2.Http()
     result = h.request(url, 'GET')[1]
 
-
     # Use token to get user info from API
     userinfo_url = "https://graph.facebook.com/v2.8/me"
     '''
@@ -148,11 +148,9 @@ def fbconnect():
     output += '!</h1>'
     output += '<img src="'
     output += login_session['picture']
-    output += ' " style = "width: 300px; height: 300px;border-radius: 150px;-webkit-border-radius: 150px;-moz-border-radius: 150px;"> '
 
     flash("Now logged in as %s" % login_session['username'])
     return output
-
 
 
 @app.route('/fbdisconnect')
@@ -189,50 +187,53 @@ def loginUser():
 
 @app.route('/authorize')
 def authorize():
-  # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow steps.
   '''
   Auth google sing in
   this function will provide the start fo connection with google authentication
   :return: will return an authorization URL
   '''
+# Create flow instance to manage the OAuth 2.0 Authorization Grant Flow steps.
+
   flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
       CLIENT_SECRETS_FILE, scopes=SCOPES)
 
-  # The URI created here must exactly match one of the authorized redirect URIs
-  # for the OAuth 2.0 client, which you configured in the API Console. If this
-  # value doesn't match an authorized URI, you will get a 'redirect_uri_mismatch'
-  # error.
+# The URI created here must exactly match one of the authorized redirect URIs
+# for the OAuth 2.0 client, which you configured in the API Console. If this
+# value doesn't match an authorized URI, you will get a 'redirect_uri_mismatch'
+# error.
+
   flow.redirect_uri = url_for('oauth2callback', _external=True)
 
   authorization_url, state = flow.authorization_url(
       # Enable offline access so that you can refresh an access token without
       # re-prompting the user for permission. Recommended for web server apps.
+
       access_type='offline',
       # Enable incremental authorization. Recommended as a best practice.
       include_granted_scopes='true')
-
-  # Store the state so the callback can verify the auth server response.
+# Store the state so the callback can verify the auth server response.
   login_session['state'] = state
-
   return redirect(authorization_url)
+
 
 @app.route('/oauth2callback')
 def oauth2callback():
-  # Specify the state when creating the flow in the callback so that it can
-  # verified in the authorization server response.
+    # Specify the state when creating the flow in the callback so that it can
+    # verified in the authorization server response.
+
   state = login_session['state']
 
   flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
       CLIENT_SECRETS_FILE, scopes=SCOPES, state=state)
   flow.redirect_uri = url_for('oauth2callback', _external=True)
+# Use the authorization server's response to fetch the OAuth 2.0 tokens.
 
-  # Use the authorization server's response to fetch the OAuth 2.0 tokens.
   authorization_response = request.url
   flow.fetch_token(authorization_response=authorization_response)
 
-  # Store credentials in the session.
-  # ACTION ITEM: In a production app, you likely want to save these
-  #              credentials in a persistent database instead.
+# Store credentials in the session.
+# ACTION ITEM: In a production app, you likely want to save these
+# credentials in a persistent database instead.
 
   credentials = flow.credentials
   oauth2_client = googleapiclient.discovery.build(
@@ -245,10 +246,7 @@ def oauth2callback():
   login_session['picture'] = ans['picture']
   login_session['email'] = ans['email']
 
-
-
-
-  # see if user exists, if it doesn't make a new one
+# see if user exists, if it doesn't make a new one
   user_id = getUserID(ans["email"])
   if not user_id:
       user_id = createUser(login_session)
@@ -258,6 +256,7 @@ def oauth2callback():
   flash("you are now logged in as %s" % login_session['username'])
 
   return redirect(url_for('showCategories'))
+
 
 # utils function
 def createUser(login_session):
@@ -283,6 +282,7 @@ def getUserID(email):
     except:
         return None
 
+
 def credentials_to_dict(credentials):
     return {'token': credentials.token,
             'refresh_token': credentials.refresh_token,
@@ -290,6 +290,7 @@ def credentials_to_dict(credentials):
             'client_id': credentials.client_id,
             'client_secret': credentials.client_secret,
             'scopes': credentials.scopes}
+
 
 # google disconnect
 @app.route('/revoke')
@@ -317,6 +318,7 @@ def revoke():
   else:
     return('An error occurred')
 
+
 # verify password function
 @auth.verify_password
 def verify_password(email, password):
@@ -326,11 +328,13 @@ def verify_password(email, password):
     g.user = user
     return True
 
+
 #verify token function
 def verify_token(token):
     user_id = User.verify_auth_token(token)
     if user_id:
         return user_id
+
 
 # reset password send email function
 def send_reset_email(user):
@@ -342,6 +346,7 @@ def send_reset_email(user):
     %s
     If you did not make this request then simply ignore this email and no changes will be made.""" % {url_for('reset_token', token=token, _external=True)}
     mail.send(msg)
+
 
 # reset password request
 @app.route("/reset_password", methods=['GET', 'POST'])
@@ -377,7 +382,7 @@ def reset_token(token):
         return render_template('reset_password.html', token=token)
 
 
-#App login to user loggin into the app using app authentication
+# App login to user loggin into the app using app authentication
 
 @app.route('/applogin', methods=['GET', 'POST'])
 def applogin():
@@ -401,6 +406,7 @@ def applogin():
             return erro
     else:
         return render_template('login.html')
+
 
 # create new user function
 @app.route("/usersingin", methods=['GET', 'POST'])
@@ -456,6 +462,7 @@ def showCategories():
     categories = session.query(Catalog).order_by(asc(Catalog.name))
     return render_template('showCategories.html', categories=categories)
 
+
 # show items from one category
 @app.route("/catalog/showItemCategory/<int:catag_id>/")
 def showItemsCategory(catag_id):
@@ -465,6 +472,7 @@ def showItemsCategory(catag_id):
     catalogitem = session.query(Catalog).filter_by(id=catag_id).one()
     return render_template('showItemsCategory.html', catagoryItems=catagoryItems, catalogitem=catalogitem,
                            login_session=login_session)
+
 
 # Add item to one category
 @app.route("/catalog/showItem/<int:item_id>/item")
@@ -544,6 +552,7 @@ def addItem(catag_id):
         return redirect(url_for('showItemsCategory', catag_id=catag_id))
     else:
         return render_template('addItem.html', catalogitem=catalogitem)
+
 
 # update one item
 @app.route("/catalog/update/<int:catag_id>/item/<int:item_id>", methods=['GET', 'POST'])
