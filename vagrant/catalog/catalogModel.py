@@ -4,12 +4,13 @@ from sqlalchemy.orm import relationship
 from sqlalchemy import create_engine
 from passlib.apps import custom_app_context as pwd_context
 from itsdangerous import(TimedJSONWebSignatureSerializer as Serializer, BadSignature, SignatureExpired)
-import random, string
+
 
 Base = declarative_base()
 
 Base = declarative_base()
-secret_key = ''.join(random.choice(string.ascii_uppercase + string.digits) for x in xrange(32))
+key = 'super_key'
+
 
 class User(Base):
     __tablename__ = 'useinfo'
@@ -27,12 +28,12 @@ class User(Base):
         return pwd_context.verify(password, self.password_hash)
 
     def generate_auth_token(self, expiration=600):
-        s = Serializer(secret_key, expires_in = expiration)
+        s = Serializer(key, expires_in = expiration)
         return s.dumps({'id': self.id})
 
     @staticmethod
     def verify_auth_token(token):
-        s = Serializer(secret_key)
+        s = Serializer(key)
         try:
             data = s.loads(token)
         except SignatureExpired:
@@ -77,7 +78,6 @@ class CatalogItem(Base):
                 'description': self.description,
                 'id': self.id,
                 'price': self.price,
-                'course': self.course,
             }
 
 
