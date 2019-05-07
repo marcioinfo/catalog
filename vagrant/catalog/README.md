@@ -41,8 +41,9 @@ You need to create the database in order to run the apps, I used Postgree but fe
 engine = create_engine('postgresql://user:password@localhost:port/dbname')
 
 ```
-import the CSV files into your tables and get all data example. This app renders images stored in a static folder which the reference names are stored on the table item_catalog
-[import CSV ](http://www.postgresqltutorial.com/import-csv-file-into-posgresql-table/)
+import the CSV files into your tables and get all data example. This app renders images stored in a static folder which the reference names are stored on the table item_catalog.
+
+[Check import CSV ](http://www.postgresqltutorial.com/import-csv-file-into-posgresql-table/)
 
 
 ## Reset Password function
