@@ -48,9 +48,7 @@ import the CSV files into your tables and get all data example. This app renders
 
 ## Reset Password function
 
-The password recovery function uses the Gmail mail server
-the user and password are defined in the App.py file code
-I will remove it once the code is reviewed
+The password recovery function uses the Gmail mail server, the user and password are defined hardcode in the App.py file code, I will remove it once the code is reviewed, I recommend you to use an environment variable store this value.
 
 
 Download the VM [here](https://pages.github.com/):
